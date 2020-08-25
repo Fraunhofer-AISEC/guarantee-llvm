@@ -3052,6 +3052,8 @@ public:
   //                             Statement Emission
   //===--------------------------------------------------------------------===//
 
+  void EmitPragmaCFA(ArrayRef<const Attr *> Attrs);
+
   /// EmitStopPoint - Emit a debug stoppoint if we are emitting debug info.
   void EmitStopPoint(const Stmt *S);
 

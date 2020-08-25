@@ -20,6 +20,7 @@
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/TypoCorrection.h"
+#include "clang/Sema/CfaHint.h"
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -414,6 +415,10 @@ Retry:
   case tok::annot_pragma_attribute:
     HandlePragmaAttribute();
     return StmtEmpty();
+
+  case tok::annot_pragma_cfa:
+    ProhibitAttributes(Attrs);
+    return ParsePragmaCFA(Stmts, StmtCtx, TrailingElseLoc, Attrs);
   }
 
   // If we reached this code, the statement must end in a semicolon.
@@ -2201,6 +2206,34 @@ StmtResult Parser::ParsePragmaLoopHint(StmtVector &Stmts,
   // See PR46336.
   if (Attrs.Range.getBegin().isInvalid())
     Attrs.Range.setBegin(StartLoc);
+
+  return S;
+}
+
+StmtResult Parser::ParsePragmaCFA(StmtVector &Stmts,
+                                  ParsedStmtContext StmtCtx,
+                                  SourceLocation *TrailingElseLoc,
+                                  ParsedAttributesWithRange &Attrs) {
+  assert(Tok.is(tok::annot_pragma_cfa));
+
+  ParsedAttributesWithRange TempAttrs(AttrFactory);
+
+  while (Tok.is(tok::annot_pragma_cfa)) {
+    CfaHint Hint;
+
+    if (!HandlePragmaCfa(Hint)) {
+      continue;
+    }
+
+    ArgsUnion ArgHints[] = {Hint.PragmaNameLoc, Hint.OptionLoc};
+    TempAttrs.addNew(Hint.PragmaNameLoc->Ident, Hint.Range, nullptr,
+                     Hint.PragmaNameLoc->Loc, ArgHints, 2,
+                     ParsedAttr::AS_Pragma);
+  }
+
+  MaybeParseCXX11Attributes(Attrs);
+  StmtResult S = ParseStatementOrDeclarationAfterAttributes(Stmts, StmtCtx, TrailingElseLoc, Attrs);
+  Attrs.takeAllFrom(TempAttrs);
 
   return S;
 }

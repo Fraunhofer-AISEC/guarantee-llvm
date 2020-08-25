@@ -19,7 +19,9 @@
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/Scope.h"
+#include "clang/Sema/CfaHint.h"
 #include "llvm/ADT/StringSwitch.h"
+#include <sstream>
 using namespace clang;
 
 namespace {
@@ -282,6 +284,12 @@ struct PragmaMaxTokensTotalHandler : public PragmaHandler {
                     Token &FirstToken) override;
 };
 
+struct PragmaCfaHandler : public PragmaHandler {
+  PragmaCfaHandler() : PragmaHandler("cfa") {}
+  void HandlePragma(Preprocessor &PP, PragmaIntroducer Introducer,
+                    Token &FirstToken) override;
+};
+
 }  // end namespace
 
 void Parser::initializePragmaHandlers() {
@@ -410,6 +418,9 @@ void Parser::initializePragmaHandlers() {
 
   MaxTokensTotalPragmaHandler = std::make_unique<PragmaMaxTokensTotalHandler>();
   PP.AddPragmaHandler("clang", MaxTokensTotalPragmaHandler.get());
+
+  CFAHandler = std::make_unique<PragmaCfaHandler>();
+  PP.AddPragmaHandler("clang", CFAHandler.get());
 }
 
 void Parser::resetPragmaHandlers() {
@@ -523,6 +534,9 @@ void Parser::resetPragmaHandlers() {
 
   PP.RemovePragmaHandler("clang", MaxTokensTotalPragmaHandler.get());
   MaxTokensTotalPragmaHandler.reset();
+
+  PP.RemovePragmaHandler("clang", CFAHandler.get());
+  CFAHandler.reset();
 }
 
 /// Handle the annotation token produced for #pragma unused(...)
@@ -1057,6 +1071,14 @@ struct PragmaLoopHintInfo {
 };
 } // end anonymous namespace
 
+namespace {
+struct PragmaCFAInfo {
+  Token PragmaName;
+  Token Option;
+  ArrayRef<Token> Toks;
+};
+} // end anonymous namespace
+
 static std::string PragmaLoopHintString(Token PragmaName, Token Option) {
   StringRef Str = PragmaName.getIdentifierInfo()->getName();
   std::string ClangLoopStr = (llvm::Twine("clang loop ") + Str).str();
@@ -1192,6 +1214,37 @@ bool Parser::HandlePragmaLoopHint(LoopHint &Hint) {
 
   Hint.Range = SourceRange(Info->PragmaName.getLocation(),
                            Info->Toks.back().getLocation());
+  return true;
+}
+
+bool Parser::HandlePragmaCfa(CfaHint &Hint) {
+  assert(Tok.is(tok::annot_pragma_cfa));
+
+  PragmaCFAInfo *Info = static_cast<PragmaCFAInfo *>(Tok.getAnnotationValue());
+
+  IdentifierInfo *PragmaNameInfo = Info->PragmaName.getIdentifierInfo();
+  Hint.PragmaNameLoc = IdentifierLoc::create(
+      Actions.Context, Info->PragmaName.getLocation(), PragmaNameInfo);
+
+  IdentifierInfo *OptionInfo = Info->Option.getIdentifierInfo();
+  Hint.OptionLoc = IdentifierLoc::create(
+      Actions.Context, Info->Option.getLocation(), OptionInfo);
+
+  llvm::ArrayRef<Token> Toks = Info->Toks;
+  PP.EnterTokenStream(Toks, /*DisableMacroExpansion=*/false, false);
+  ConsumeAnnotationToken();
+
+  if (Tok.isNot(tok::eof)) {
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_cfa)
+        << "cfa pragma";
+    while (Tok.isNot(tok::eof)) {
+      ConsumeAnyToken();
+    }
+  }
+
+  ConsumeToken();
+  Hint.Range = SourceRange(Info->PragmaName.getLocation(), Info->Toks.back().getLocation());
+
   return true;
 }
 
@@ -3524,4 +3577,79 @@ void PragmaMaxTokensTotalHandler::HandlePragma(Preprocessor &PP,
   }
 
   PP.overrideMaxTokens(MaxTokens, Loc);
+}
+
+static bool ParseCfaValue(Preprocessor &PP, Token &Tok, Token PragmaName,
+                          Token Option, PragmaCFAInfo &Info) {
+  SmallVector<Token, 1> ValueList;
+
+  while (Tok.isNot(tok::eod)) {
+    ValueList.push_back(Tok);
+    PP.Lex(Tok);
+  }
+
+  Token EOFTok;
+  EOFTok.startToken();
+  EOFTok.setKind(tok::eof);
+  EOFTok.setLocation(Tok.getLocation());
+  ValueList.push_back(EOFTok);
+
+  Info.Toks = llvm::makeArrayRef(ValueList).copy(PP.getPreprocessorAllocator());
+  Info.Option = Option;
+  Info.PragmaName = PragmaName;
+
+  return true;
+}
+
+void PragmaCfaHandler::HandlePragma(Preprocessor &PP,
+                                    PragmaIntroducer Introducer,
+                                    Token &Tok) {
+  Token PragmaName = Tok;
+  SmallVector<Token, 1> TokenList;
+  PP.Lex(Tok);
+
+  if (Tok.isNot(tok::identifier)) {
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_cfa)
+        << "not a identifier token for the option of pragma cfa";
+    return;
+  }
+
+  Token Option = Tok;
+
+  IdentifierInfo *OptionInfo = Tok.getIdentifierInfo();
+  bool OptionValid = llvm::StringSwitch<bool>(OptionInfo->getName())
+                            .Case("start", true)
+                            .Case("end", true)
+                            .Default(false);
+  if (!OptionValid) {
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_cfa)
+        << "option not recognized for pragma cfa";
+    return;
+  }
+
+  PP.Lex(Tok);
+
+  auto *Info = new (PP.getPreprocessorAllocator()) PragmaCFAInfo;
+  if (!ParseCfaValue(PP, Tok, PragmaName, Option, *Info)) {
+    return;
+  }
+
+  Token CFATok;
+  CFATok.startToken();
+  CFATok.setKind(tok::annot_pragma_cfa);
+  CFATok.setLocation(PragmaName.getLocation());
+  CFATok.setAnnotationEndLoc(PragmaName.getLocation());
+  CFATok.setAnnotationValue(static_cast<void *>(Info));
+  TokenList.push_back(CFATok);
+
+  if (Tok.isNot(tok::eod)) {
+    printf("Error, extra tokens at the end of pragma cfa\n");
+    PP.Diag(Tok.getLocation(), diag::warn_pragma_cfa)
+        << "cfa pragma";
+    return;
+  }
+
+  auto TokenArray = std::make_unique<Token[]>(TokenList.size());
+  std::copy(TokenList.begin(), TokenList.end(), TokenArray.get());
+  PP.EnterTokenStream(std::move(TokenArray), TokenList.size(), false, false);
 }

@@ -3222,6 +3222,27 @@ def LoopHint : Attr {
   let Documentation = [LoopHintDocs, UnrollHintDocs];
 }
 
+def CFA : Attr {
+  let Spellings = [Pragma<"", "cfa">];
+  let Args = [EnumArgument<"Tag", "TagType",
+                          ["start", "end"],
+                          ["Start", "End"]>];
+  let AdditionalMembers = [{
+    static const char *getCFATagName(int Tag) {
+      switch(Tag) {
+        case Start: return "start";
+        case End: return "end";
+      }
+      llvm_unreachable("Unhandled CFA option.");
+    }
+
+    void printPrettyPragma(raw_ostream &OS, const PrintingPolicy &Policy) const {
+      return;
+    }
+  }];
+  let Documentation = [CFADocs];
+}
+
 def CapturedRecord : InheritableAttr {
   // This attribute has no spellings as it is only ever created implicitly.
   let Spellings = [];

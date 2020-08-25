@@ -45,9 +45,52 @@ void CodeGenFunction::EmitStopPoint(const Stmt *S) {
   }
 }
 
+#define START_CFI_CODE 0xffffffffffffffff
+#define END_CFI_CODE 0xfffffffffffffff0
+
+void CodeGenFunction::EmitPragmaCFA(ArrayRef<const Attr *> Attrs) {
+
+  llvm::Module &M = CGM.getModule();
+  llvm::Function *Callee;
+  uint64_t tagID = 0;
+
+  if (Attrs[0]->getKind() == attr::CFA) {
+    const Attr *a = Attrs[0];
+    const CFAAttr *ca = (const CFAAttr*)a;
+
+    if (!(Callee = M.getFunction("trampoline"))) {
+      std::vector<llvm::Type*> TrampArg;
+      TrampArg.push_back(llvm::Type::getInt64Ty(Builder.getContext()));
+      llvm::FunctionType *FT = llvm::FunctionType::get(llvm::Type::getVoidTy(Builder.getContext()), TrampArg, false);
+      Callee = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "trampoline", CGM.getModule());
+    }
+
+    if (ca->getTag() == CFAAttr::Start) {
+      tagID = START_CFI_CODE;
+    } else if (ca->getTag() == CFAAttr::End) {
+      tagID = END_CFI_CODE;
+    } else {
+      printf("Malformed CFA attribute\n");
+      return;
+    }
+
+    llvm::Constant *id = llvm::ConstantInt::get(llvm::Type::getInt64Ty(Builder.getContext()), tagID, false);
+
+    // Insert call to CFI function
+    std::vector<llvm::Value *> Args(1, id);
+    EmitCallOrInvoke(Callee, Args);
+  }
+}
+
 void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
   assert(S && "Null statement?");
   PGO.setCurrentStmt(S);
+
+  // Handle pragma cfa
+  if (Attrs.size() > 0) {
+    if (Attrs[0]->getKind() == attr::CFA)
+      EmitPragmaCFA(Attrs);
+  }
 
   // These statements have their own debug info handling.
   if (EmitSimpleStmt(S))

@@ -171,6 +171,34 @@ static Attr *handleLoopHintAttr(Sema &S, Stmt *St, const ParsedAttr &A,
   return LoopHintAttr::CreateImplicit(S.Context, Option, State, ValueExpr, A);
 }
 
+static Attr *handleCFAAttr(Sema &S, Stmt *St, const ParsedAttr &A,
+                                   SourceRange) {
+  unsigned NumArgs = A.getNumArgs();
+
+  if (NumArgs < 2) {
+    S.Diag(A.getLoc(), diag::err_attribute_too_few_arguments) << A << 1;
+    return nullptr;
+  }
+
+  if (NumArgs > 2) {
+    S.Diag(A.getLoc(), diag::err_attribute_too_many_arguments) << A << 2;
+    return nullptr;
+  }
+
+  CFAAttr::TagType Tag;
+  IdentifierLoc *OptionLoc = A.getArgAsIdent(1);
+
+  if (OptionLoc->Ident->getName() == "start") {
+    Tag = CFAAttr::Start;
+  } else if (OptionLoc->Ident->getName() == "end") {
+    Tag = CFAAttr::End;
+  } else {
+    printf("Error, no start or end in CFA\n");
+  }
+
+  return CFAAttr::CreateImplicit(S.Context, Tag, A.getRange());
+}
+
 namespace {
 class CallExprFinder : public ConstEvaluatedExprVisitor<CallExprFinder> {
   bool FoundCallExpr = false;
@@ -376,6 +404,8 @@ static Attr *ProcessStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &A,
     return handleSuppressAttr(S, St, A, Range);
   case ParsedAttr::AT_NoMerge:
     return handleNoMergeAttr(S, St, A, Range);
+  case ParsedAttr::AT_CFA:
+    return handleCFAAttr(S, St, A, Range);
   default:
     // if we're here, then we parsed a known attribute, but didn't recognize
     // it as a statement attribute => it is declaration attribute

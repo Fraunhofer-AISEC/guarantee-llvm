@@ -1438,4 +1438,7 @@ def warn_max_tokens_total : Warning<
 
 def note_max_tokens_total_override : Note<"total token limit set here">;
 
+def warn_pragma_cfa : Warning<
+  "Invalid use of cfa directive: %0">;
+
 } // end of Parser diagnostics

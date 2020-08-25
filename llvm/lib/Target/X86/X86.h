@@ -136,6 +136,9 @@ FunctionPass *createX86InsertX87waitPass();
 /// ways.
 FunctionPass *createX86PartialReductionPass();
 
+/// This pass instruments indirect calls and jumps for the guarantee CFA scheme
+FunctionPass *createX86GuaranteeBackendInstrumentationPass();
+
 InstructionSelector *createX86InstructionSelector(const X86TargetMachine &TM,
                                                   X86Subtarget &,
                                                   X86RegisterBankInfo &);

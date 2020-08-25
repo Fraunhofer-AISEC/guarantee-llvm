@@ -4921,3 +4921,13 @@ Requirements on Development Tools - Engineering Specification Documentation
 <https://developer.arm.com/docs/ecm0359818/latest/>`_ for more information.
   }];
 }
+
+def CFADocs : Documentation {
+  let Category = DocCatStmt;
+  let Heading = "#pragma cfa";
+  let Content = [{
+  The ``#pragma cfa`` directive allows to annotate start- and endpoint for the GuaranTEE CFA mechanism.
+  Implementation based on <https://git.scc.kit.edu/CES/clang-custom-pragma> and
+  <https://blog.quarkslab.com/implementing-a-custom-directive-handler-in-clang.html>
+  }];
+}

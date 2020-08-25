@@ -38,6 +38,7 @@ namespace clang {
   class DeclGroupRef;
   class DiagnosticBuilder;
   struct LoopHint;
+  struct CfaHint;
   class Parser;
   class ParsingDeclRAIIObject;
   class ParsingDeclSpec;
@@ -208,6 +209,7 @@ class Parser : public CodeCompletionHandler {
   std::unique_ptr<PragmaHandler> AttributePragmaHandler;
   std::unique_ptr<PragmaHandler> MaxTokensHerePragmaHandler;
   std::unique_ptr<PragmaHandler> MaxTokensTotalPragmaHandler;
+  std::unique_ptr<PragmaHandler> CFAHandler;
 
   std::unique_ptr<CommentHandler> CommentSemaHandler;
 
@@ -761,6 +763,8 @@ private:
   /// Handle the annotation token produced for
   /// #pragma clang loop and #pragma unroll.
   bool HandlePragmaLoopHint(LoopHint &Hint);
+
+  bool HandlePragmaCfa(CfaHint &Hint);
 
   bool ParsePragmaAttributeSubjectMatchRuleSet(
       attr::ParsedSubjectMatchRuleSet &SubjectMatchRules,
@@ -2085,6 +2089,10 @@ private:
                                  ParsedStmtContext StmtCtx,
                                  SourceLocation *TrailingElseLoc,
                                  ParsedAttributesWithRange &Attrs);
+  StmtResult ParsePragmaCFA(StmtVector &Stmts,
+                            ParsedStmtContext StmtCtx,
+                            SourceLocation *TrailingElseLoc,
+                            ParsedAttributesWithRange &Attrs);
 
   /// Describes the behavior that should be taken for an __if_exists
   /// block.
